@@ -11,6 +11,8 @@ from slack_bolt.adapter.socket_mode import SocketModeHandler
 import env
 # ロギング
 import traceback
+# Azure Storage
+import azure_table_utils as azure_table
 
 # モードに応じて書き換え
 BOT_USER_ID = env.get_env_variable("BOT_USER_ID")
@@ -94,6 +96,23 @@ def respondToRequestMsg(body, client:WebClient, ack):
 
             # Slackに返答
             client.chat_postMessage(channel=channel, text=input_text ,thread_ts=ts)
+
+            # 投稿内容をDBに保存
+            storage_name = env.get_env_variable("AZURE_STORAGE_NAME")
+            storage_key = env.get_env_variable("AZURE_STORAGE_KEY")
+            client_table_stoarge = azure_table.AzureTableStorageUtils(storage_name, storage_key)
+            params = {
+                "PartitionKey":channel,
+                "RowKey":ts,
+                "ChannelId":channel, 
+                "PosterUserDisplayName":user,
+                # "PosterUserId":user_id,
+                # "PosterUserName":user_name,
+            }
+            client_table_stoarge.insert_or_replace_entity('TestTable', params)
+
+            print("-------------------------------------------------")
+            print("======== respondToRequestMsg - Azure StorageへのINSERT完了："+str(client_table_stoarge))
 
         except Exception as e:
             print("-------------------------------------------------")
