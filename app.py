@@ -11,6 +11,7 @@ from slack_bolt.adapter.socket_mode import SocketModeHandler
 import env
 # ロギング
 import traceback
+from log_utils import prepare_logger
 # Azure Storage
 import azure_table_utils as azure_table
 
@@ -79,9 +80,11 @@ def slack_events():
 @s_app.event("message")
 @s_app.event("app_mention")
 def respondToRequestMsg(body, client:WebClient, ack):
+    logger = prepare_logger()
     ack()
     type = body["event"].get("type", None)
     # 二重で応答するのを防ぐため、メンションの時のイベントのみ応答対象とする
+    logger.info(f"respondToRequestMsg - イベント種別： {type}")
     if type == 'app_mention':
         try:
             #-----------------------------------
@@ -96,6 +99,7 @@ def respondToRequestMsg(body, client:WebClient, ack):
 
             # Slackに返答
             client.chat_postMessage(channel=channel, text=input_text ,thread_ts=ts)
+            logger.info(f"respondToRequestMsg - Slackへの投稿完了： {input_text}")
 
             # 投稿内容をDBに保存
             storage_name = env.get_env_variable("AZURE_STORAGE_NAME")
@@ -110,13 +114,9 @@ def respondToRequestMsg(body, client:WebClient, ack):
                 # "PosterUserName":user_name,
             }
             client_table_stoarge.insert_or_replace_entity('TestTable', params)
-
-            print("-------------------------------------------------")
-            print("======== respondToRequestMsg - Azure StorageへのINSERT完了："+str(client_table_stoarge))
-
+            logger.info(f"respondToRequestMsg - Azure StorageへのINSERT完了： {str(client_table_stoarge)}")
         except Exception as e:
-            print("-------------------------------------------------")
-            print("======== react_to_msg 例外発生："+str(e))
+            logger.info(f"react_to_msg 例外発生： {str(e)}")
             traceback.print_exc()
 
 # __name__はPythonにおいて特別な意味を持つ変数です。
@@ -124,6 +124,7 @@ def respondToRequestMsg(body, client:WebClient, ack):
 # この記述により、Flaskがmainモジュールとして実行された時のみ起動する事を保証します。
 # （それ以外の、例えば他モジュールから呼ばれた時などは起動しない）
 if __name__ == '__main__':
+    
     EXEC_MODE = "SLACK_SOCKET_MODE"
     # Slack ソケットモード実行
     if EXEC_MODE == "SLACK_SOCKET_MODE":
