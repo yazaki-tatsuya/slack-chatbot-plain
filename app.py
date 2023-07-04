@@ -116,8 +116,9 @@ def respondToRequestMsg(body, client:WebClient, ack):
             client_table_stoarge.insert_or_replace_entity('TestTable', params)
             logger.info(f"respondToRequestMsg - Azure StorageへのINSERT完了： {str(client_table_stoarge)}")
         except Exception as e:
-            logger.info(f"react_to_msg 例外発生： {str(e)}")
-            traceback.print_exc()
+            trace = traceback.extract_tb(e.__traceback__)
+            error_line = trace[-1].lineno
+            logger.info(f"respond_to_message - 例外発生__エラーが発生した行数=： {error_line} エラー内容={str(e)}")
 
 # __name__はPythonにおいて特別な意味を持つ変数です。
 # 具体的にはスクリプトの名前を値として保持します。
