@@ -14,6 +14,8 @@ import traceback
 from log_utils import prepare_logger
 # Azure Storage
 import azure_table_utils as azure_table
+# Blockの取得
+import get_block_message
 
 # モードに応じて書き換え
 BOT_USER_ID = env.get_env_variable("BOT_USER_ID")
@@ -77,6 +79,11 @@ def slack_events():
     # ------------------------------------
     return handler_flask.handle(request)
 
+# # Interactive操作のリクエストを受け付けるエンドポイント
+# @app.route("/slack/interactive", methods=["POST"])
+# def slack_interactive():
+#     return handler_flask.handle(request)
+
 @s_app.event("message")
 @s_app.event("app_mention")
 def respondToRequestMsg(body, client:WebClient, ack):
@@ -98,7 +105,8 @@ def respondToRequestMsg(body, client:WebClient, ack):
             attachment_files = body["event"].get("files", None)
 
             # Slackに返答
-            client.chat_postMessage(channel=channel, text=input_text ,thread_ts=ts)
+            # client.chat_postMessage(channel=channel, text=input_text ,thread_ts=ts)
+            client.chat_postEphemeral(user=user, channel=channel, blocks=get_block_message.get_feeling_block(user))
             logger.info(f"respondToRequestMsg - Slackへの投稿完了： {input_text}")
 
             # 投稿内容をDBに保存
@@ -119,6 +127,12 @@ def respondToRequestMsg(body, client:WebClient, ack):
             trace = traceback.extract_tb(e.__traceback__)
             error_line = trace[-1].lineno
             logger.info(f"respond_to_message - 例外発生__エラーが発生した行数=： {error_line} エラー内容={str(e)}")
+
+# ehemeralメッセージの削除
+@s_app.action("action_react_exec_request_delete")
+def delete_first_ephemeral(ack, action, respond):
+    ack()
+    respond(delete_original=True)
 
 # __name__はPythonにおいて特別な意味を持つ変数です。
 # 具体的にはスクリプトの名前を値として保持します。
