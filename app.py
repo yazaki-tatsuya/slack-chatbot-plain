@@ -100,13 +100,13 @@ def respondToRequestMsg(body, client:WebClient, ack):
             bot_user_id = os.environ.get('BOT_USER_ID')
             channel = body["event"]["channel"]
             ts = body["event"]["ts"]
-            thread_ts = body["event"].get("thread_ts", None)
+            thread_ts = body["event"].get("thread_ts", ts)
             user = body["event"]["user"]
             attachment_files = body["event"].get("files", None)
 
             # Slackに返答
             # client.chat_postMessage(channel=channel, text=input_text ,thread_ts=ts)
-            client.chat_postEphemeral(user=user, channel=channel, blocks=get_block_message.get_feeling_block(user))
+            client.chat_postMessage(channel=channel, blocks=get_block_message.get_feeling_block(user), thread_ts=thread_ts)
             logger.info(f"respondToRequestMsg - Slackへの投稿完了： {input_text}")
 
             # 投稿内容をDBに保存
