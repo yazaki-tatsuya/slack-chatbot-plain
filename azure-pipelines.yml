@@ -1,0 +1,128 @@
+# ================================================
+# Azure DevOps → Azure App Service (Python) CI/CD
+# - main に push → ビルド → スロット(staging)へデプロイ → 本番へスワップ
+# - スロットを使わない場合は末尾の「Swap」ステージを削除し、
+#   変数 slotName を 'production' にしてください。
+# ================================================
+
+# main ブランチにコミットされたら自動実行
+trigger:
+  branches:
+    include:
+      - main
+
+# 変数（あとで上書きしやすいようまとめる）
+variables:
+  vmImage: 'ubuntu-latest'              # ビルドエージェントOS
+  azureServiceConnection: 'sc-azure-test' # Service connection 名（Azure DevOpsで作成済みのもの）
+  webAppName: 'z-slack-test'          # AzureのApp Service（Web App）の名前
+  resourceGroup: 'z_test'        # Web App が属するリソースグループ
+  slotName: 'staging'                   # デプロイ先スロット名（直本番なら 'production'）
+  packagePath: '$(Build.ArtifactStagingDirectory)/drop.zip' # Zip Deploy で使うパッケージの保存先
+
+stages:
+# =========================
+# 1) Build & Package
+# =========================
+- stage: Build
+  displayName: Build & Package (Python)
+  pool:
+    vmImage: $(vmImage)
+
+  jobs:
+  - job: BuildPython
+    displayName: Build Python app and create zip
+    steps:
+      # 【ポイント】Azure DevOpsのビルドマシンに指定バージョンのPythonを入れる
+      - task: UsePythonVersion@0
+        displayName: 'Use Python 3.11'
+        inputs:
+          versionSpec: '3.11'  # App Service 側のランタイムと合わせるのが無難
+
+      # 依存ライブラリのインストールと成果物のステージング
+      - script: |
+          set -e  # 途中でエラーになったら終了（見落とし防止）
+          python -m pip install --upgrade pip
+
+          # ビルド成果物（後でzip化する中身）を置くフォルダを用意
+          mkdir -p $(Build.ArtifactStagingDirectory)/app
+
+          # requirements.txt がある場合は、その内容を "app" フォルダにインストール
+          # → App Service へ zip で送ると、そのまま実行に必要なライブラリが入っている状態になる
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt -t $(Build.ArtifactStagingDirectory)/app
+          fi
+
+          # プロジェクトのソースコードを "app" フォルダへコピー
+          # rsync を使うと不要なものを除外しやすい（tests や .venv など）
+          rsync -av \
+            --exclude '.git' \
+            --exclude '.venv' \
+            --exclude 'tests' \
+            ./ $(Build.ArtifactStagingDirectory)/app/
+        displayName: 'Install deps & stage app files'
+
+      # "app" フォルダの中身を zip に固める（App Service の Zip Deploy で使う形式）
+      - task: ArchiveFiles@2
+        displayName: 'Archive app → drop.zip'
+        inputs:
+          rootFolderOrFile: '$(Build.ArtifactStagingDirectory)/app'  # zipに含める中身
+          includeRootFolder: false   # 直下のファイル/フォルダのみ含める
+          archiveType: 'zip'
+          archiveFile: '$(packagePath)' # 変数で指定した zip 出力先
+
+      # 後段の Deploy ステージから取得できるよう、ビルド成果物として発行
+      - publish: $(Build.ArtifactStagingDirectory)
+        displayName: 'Publish build artifact: drop'
+        artifact: drop
+
+# =========================
+# 2) Deploy to Slot (staging)
+# =========================
+- stage: Deploy
+  displayName: "Deploy to App Service (slot: $(slotName))"
+  dependsOn: Build          # Build が成功したら実行
+  condition: succeeded()    # 失敗したら止める
+
+  jobs:
+  - deployment: DeployWebApp
+    displayName: 'Zip Deploy to $(webAppName)/$(slotName)'
+    environment: 'prod-staging'  # Azure DevOpsのEnvironment名（承認ゲート等に使える）
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+            # 直前の Build ステージで発行した成果物(drop)を取得
+            - download: current
+              artifact: drop
+
+            # Azure App Service へ zip をデプロイ
+            - task: AzureWebApp@1
+              displayName: 'AzureWebApp@1 Zip Deploy'
+              inputs:
+                azureSubscription: $(azureServiceConnection)       # Service connection 名
+                appName: $(webAppName)                             # Web App 名
+                slotName: $(slotName)                              # スロット（未使用なら削除）
+                package: '$(Pipeline.Workspace)/drop/drop.zip'     # 上で作った zip のパス
+
+# =========================
+# 3) Slot Swap → production
+# =========================
+- stage: Swap
+  displayName: Slot Swap to Production
+  dependsOn: Deploy
+  condition: succeeded()
+
+  jobs:
+  - job: SwapSlots
+    displayName: 'Swap $(slotName) → production'
+    steps:
+      # スロットを production と入れ替える（Blue/Green 的な切替）
+      - task: AzureAppServiceManage@0
+        displayName: 'AzureAppServiceManage@0 Swap Slots'
+        inputs:
+          azureSubscription: $(azureServiceConnection) # Service connection 名
+          WebAppName: $(webAppName)                    # Web App 名
+          ResourceGroupName: $(resourceGroup)          # RG名（Swapタスクは必要）
+          SourceSlot: $(slotName)                      # ここで指定したスロットを production と入替
+          Action: 'Swap Slots'
