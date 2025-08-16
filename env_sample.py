@@ -27,3 +27,15 @@ def get_env_variable(key):
     }
     ret_val = env_variable_dict.get(key, None)
     return ret_val
+
+
+# ------------------------------------
+# 環境変数の取得
+# ------------------------------------
+import os
+# 安全な環境変数読み込み関数
+def require(name: str) -> str:
+    v = os.getenv(name)
+    if not v:
+        raise RuntimeError(f"Missing required env var: {name}")
+    return v

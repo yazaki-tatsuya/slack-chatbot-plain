@@ -1,5 +1,6 @@
 import os
 from dotenv import load_dotenv
+load_dotenv()  # .env を読み込む（ローカル用）
 from slack_bolt import App
 from slack_sdk import WebClient
 # Flaskクラスのインポート
@@ -18,14 +19,15 @@ import azure_table_utils as azure_table
 import get_block_message
 
 # モードに応じて書き換え
-BOT_USER_ID = env.get_env_variable("BOT_USER_ID")
+BOT_USER_ID = env.require("BOT_USER_ID")
+
 # Botトークン（Flask）
-WEBAPPS_SLACK_TOKEN = env.get_env_variable("WEBAPPS_SLACK_TOKEN")
-WEBAPPS_SIGNING_SECRET = env.get_env_variable("WEBAPPS_SIGNING_SECRET")
+WEBAPPS_SLACK_TOKEN = env.require("WEBAPPS_SLACK_TOKEN")
+WEBAPPS_SIGNING_SECRET = env.require("WEBAPPS_SIGNING_SECRET")
 
 # Botトークン（ソケットモード）
-SOCK_SLACK_BOT_TOKEN = env.get_env_variable("SOCK_SLACK_BOT_TOKEN")
-SOCK_SLACK_APP_TOKEN = env.get_env_variable("SOCK_SLACK_APP_TOKEN")
+SOCK_SLACK_BOT_TOKEN = env.require("SOCK_SLACK_BOT_TOKEN")
+SOCK_SLACK_APP_TOKEN = env.require("SOCK_SLACK_APP_TOKEN")
 
 # モード入れ替え（WebAPサーバ実行＝Flask／ローカル実行＝ソケットモード)
 def app_mode_change(i_name):
@@ -139,7 +141,6 @@ def delete_first_ephemeral(ack, action, respond):
 # この記述により、Flaskがmainモジュールとして実行された時のみ起動する事を保証します。
 # （それ以外の、例えば他モジュールから呼ばれた時などは起動しない）
 if __name__ == '__main__':
-    
     EXEC_MODE = "SLACK_SOCKET_MODE"
     # Slack ソケットモード実行
     if EXEC_MODE == "SLACK_SOCKET_MODE":
