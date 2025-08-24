@@ -15,9 +15,8 @@ trigger:
 variables:
   vmImage: 'ubuntu-latest'              # ビルドエージェントOS
   azureServiceConnection: 'sc-azure-test' # Service connection 名（Azure DevOpsで作成済みのもの）
-  webAppName: 'z-slack-test'          # AzureのApp Service（Web App）の名前
-  resourceGroup: 'z_test'        # Web App が属するリソースグループ
-  slotName: 'staging'                   # デプロイ先スロット名（直本番なら 'production'）
+  webAppName: 'slack-app-test-20250814'          # AzureのApp Service（Web App）の名前
+  resourceGroup: 'rainbow-comtool-dev'        # Web App が属するリソースグループ
   packagePath: '$(Build.ArtifactStagingDirectory)/drop.zip' # Zip Deploy で使うパッケージの保存先
 
 stages:
@@ -102,27 +101,4 @@ stages:
               inputs:
                 azureSubscription: $(azureServiceConnection)       # Service connection 名
                 appName: $(webAppName)                             # Web App 名
-                slotName: $(slotName)                              # スロット（未使用なら削除）
                 package: '$(Pipeline.Workspace)/drop/drop.zip'     # 上で作った zip のパス
-
-# =========================
-# 3) Slot Swap → production
-# =========================
-- stage: Swap
-  displayName: Slot Swap to Production
-  dependsOn: Deploy
-  condition: succeeded()
-
-  jobs:
-  - job: SwapSlots
-    displayName: 'Swap $(slotName) → production'
-    steps:
-      # スロットを production と入れ替える（Blue/Green 的な切替）
-      - task: AzureAppServiceManage@0
-        displayName: 'AzureAppServiceManage@0 Swap Slots'
-        inputs:
-          azureSubscription: $(azureServiceConnection) # Service connection 名
-          WebAppName: $(webAppName)                    # Web App 名
-          ResourceGroupName: $(resourceGroup)          # RG名（Swapタスクは必要）
-          SourceSlot: $(slotName)                      # ここで指定したスロットを production と入替
-          Action: 'Swap Slots'
