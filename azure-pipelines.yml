@@ -58,6 +58,7 @@ stages:
             --exclude '.git' \
             --exclude '.venv' \
             --exclude 'tests' \
+            --exclude '.env' \
             ./ $(Build.ArtifactStagingDirectory)/app/
         displayName: 'Install deps & stage app files'
 
