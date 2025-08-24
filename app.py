@@ -1,3 +1,4 @@
+
 import os
 from dotenv import load_dotenv
 load_dotenv()  # .env を読み込む（ローカル用）
@@ -8,26 +9,23 @@ from flask import Flask, request,jsonify
 from slack_bolt.adapter.flask import SlackRequestHandler
 #ソケットモード用
 from slack_bolt.adapter.socket_mode import SocketModeHandler
-# 環境変数読み込み
-import env
 # ロギング
 import traceback
 from log_utils import prepare_logger
-# Azure Storage
-import azure_table_utils as azure_table
+# Azure Storage（変更点①：新SDKに切替）
+from azure.data.tables import TableServiceClient, UpdateMode
+from azure.core.credentials import AzureNamedKeyCredential
 # Blockの取得
 import get_block_message
 
 # モードに応じて書き換え
-BOT_USER_ID = env.require("BOT_USER_ID")
-
+BOT_USER_ID = os.environ.get("BOT_USER_ID")
 # Botトークン（Flask）
-WEBAPPS_SLACK_TOKEN = env.require("WEBAPPS_SLACK_TOKEN")
-WEBAPPS_SIGNING_SECRET = env.require("WEBAPPS_SIGNING_SECRET")
-
+WEBAPPS_SLACK_TOKEN = os.environ.get("WEBAPPS_SLACK_TOKEN")
+WEBAPPS_SIGNING_SECRET = os.environ.get("WEBAPPS_SIGNING_SECRET")
 # Botトークン（ソケットモード）
-SOCK_SLACK_BOT_TOKEN = env.require("SOCK_SLACK_BOT_TOKEN")
-SOCK_SLACK_APP_TOKEN = env.require("SOCK_SLACK_APP_TOKEN")
+SOCK_SLACK_BOT_TOKEN = os.environ.get("SOCK_SLACK_BOT_TOKEN")
+SOCK_SLACK_APP_TOKEN = os.environ.get("SOCK_SLACK_APP_TOKEN")
 
 # モード入れ替え（WebAPサーバ実行＝Flask／ローカル実行＝ソケットモード)
 def app_mode_change(i_name):
@@ -60,21 +58,23 @@ def home():
 def hello_test():
     return "Hello, This is test.2!!"
 
-#イベント登録されたリクエストを受け付けるエンドポイント
+# #イベント登録されたリクエストを受け付けるエンドポイント
 @app.route("/slack/events", methods=["POST"])
 def slack_events():
 
-    # ------------------------------------
-    # Challenge用
-    # ------------------------------------
+    # # ------------------------------------
+    # # Challenge用
+    # # ------------------------------------
     # # Slackから送られてくるPOSTリクエストのBodyの内容を取得
-    # json =  request.json
-    # print(json)
-    # # レスポンス用のJSONデータを作成
-    # # 受け取ったchallengeのKey/Valueをそのまま返却する
-    # d = {'challenge' : json["challenge"]}
-    # # レスポンスとしてJSON化して返却
-    # return jsonify(d)
+    # # Content-Typeが違っても強制的にJSONとして読み込む
+    # json_data = request.get_json(force=True, silent=True)
+    # print(json_data)
+
+    # if not json_data or 'challenge' not in json_data:
+    #     return "Invalid request", 400
+
+    # # challengeを返却
+    # return jsonify({'challenge': json_data['challenge']})
 
     # ------------------------------------
     # 本番用
@@ -111,11 +111,13 @@ def respondToRequestMsg(body, client:WebClient, ack):
             client.chat_postMessage(channel=channel, blocks=get_block_message.get_feeling_block(user), thread_ts=thread_ts)
             logger.info(f"respondToRequestMsg - Slackへの投稿完了： {input_text}")
 
-            # 投稿内容をDBに保存
-            storage_name = env.get_env_variable("AZURE_STORAGE_NAME")
-            storage_key = env.get_env_variable("AZURE_STORAGE_KEY")
-            client_table_stoarge = azure_table.AzureTableStorageUtils(storage_name, storage_key)
-            params = {
+            # 投稿内容をDBに保存（変更点②：新SDKでの保存処理）
+            storage_name = os.getenv("AZURE_STORAGE_NAME")
+            storage_key = os.getenv("AZURE_STORAGE_KEY")
+            credential = AzureNamedKeyCredential(storage_name, storage_key)
+            service = TableServiceClient(endpoint=f"https://{storage_name}.table.core.windows.net", credential=credential)
+            table_client = service.get_table_client("TestTable")
+            entity = {
                 "PartitionKey":channel,
                 "RowKey":ts,
                 "ChannelId":channel, 
@@ -123,8 +125,8 @@ def respondToRequestMsg(body, client:WebClient, ack):
                 # "PosterUserId":user_id,
                 # "PosterUserName":user_name,
             }
-            client_table_stoarge.insert_or_replace_entity('TestTable', params)
-            logger.info(f"respondToRequestMsg - Azure StorageへのINSERT完了： {str(client_table_stoarge)}")
+            table_client.upsert_entity(entity=entity, mode=UpdateMode.REPLACE)
+            logger.info(f"respondToRequestMsg - Azure StorageへのINSERT完了")
         except Exception as e:
             trace = traceback.extract_tb(e.__traceback__)
             error_line = trace[-1].lineno
@@ -151,4 +153,5 @@ if __name__ == '__main__':
         # →Webサーバが起動して、所定のURLからアクセス可能になります。
         # →hostはFlaskが起動するサーバを指定しています（今回はローカル端末）
         # →portは起動するポートを指定しています（デフォルト5000）
-        app.run(port=8000, debug=True)
+        port = int(os.getenv("PORT", 8000))  # 環境変数 PORT を取得し、デフォルト値を 8000 に設定
+        app.run(host="0.0.0.0", port=port)  # Azure App Serviceでは host="0.0.0.0" を指定
