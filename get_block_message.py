@@ -4,7 +4,7 @@ def get_feeling_block(target_user:str):
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": f"{target_user}さん、今日の気分を教えてください:relaxed:"
+                    "text": f"<@{target_user}>さん、今日の気分を教えてください:relaxed:"
                 },
                 "accessory": {
                     "type": "radio_buttons",
